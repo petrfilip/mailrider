@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catch-all Mail Server - Professional Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f4ff',
+                            100: '#e0e9ff',
+                            500: '#667eea',
+                            600: '#5568d3',
+                            700: '#4451b2',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-8 h-8 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Catch-all Mail Server</h1>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Receives ALL emails to any address and domain</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <!-- Stats -->
+                        <div class="hidden md:flex items-center space-x-4 text-sm">
+                            <div class="text-center px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                                <div class="font-bold text-primary-600 dark:text-primary-400" id="headerTotalEmails">0</div>
+                                <div class="text-xs text-gray-600 dark:text-gray-400">Emails</div>
+                            </div>
+                            <div class="text-center px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                                <div class="font-bold text-primary-600 dark:text-primary-400" id="headerTotalSize">0 B</div>
+                                <div class="text-xs text-gray-600 dark:text-gray-400">Size</div>
+                            </div>
+                        </div>
+                        <!-- Dark mode toggle -->
+                        <button onclick="toggleDarkMode()" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <svg class="w-5 h-5 text-gray-700 dark:text-gray-300 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                            </svg>
+                            <svg class="w-5 h-5 text-gray-700 dark:text-gray-300 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                            </svg>
+                        </button>
+                        <!-- Refresh button -->
+                        <button onclick="loadEmails()" id="refreshBtn" class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors flex items-center space-x-2">
+                            <svg class="w-4 h-4" id="refreshIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[calc(100vh-88px)]">
+            <!-- Left Panel - Email List (25%) -->
+            <div class="lg:col-span-3 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col min-w-[320px]">
+                <!-- Search & Toolbar -->
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
+                    <!-- Search -->
+                    <div class="relative">
+                        <input
+                            type="text"
+                            id="searchInput"
+                            placeholder="Search emails..."
+                            onkeyup="filterEmails()"
+                            class="w-full px-4 py-2 pl-10 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                        >
+                        <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+
+                    <!-- Bulk Actions -->
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="w-4 h-4 text-primary-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Select all</span>
+                        </label>
+                        <div class="flex space-x-2">
+                            <button onclick="deleteSelected()" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
+                                Delete selected
+                            </button>
+                            <button onclick="deleteAll()" class="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors">
+                                Delete all
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Email List -->
+                <div id="emailList" class="flex-1 overflow-y-auto">
+                    <div class="p-4 text-center text-gray-500 dark:text-gray-400">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Email Detail (75%) -->
+            <div class="lg:col-span-9 bg-white dark:bg-gray-800 flex flex-col">
+                <div id="emailDetail" class="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    <div class="text-center">
+                        <svg class="w-24 h-24 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <p class="text-lg">Select an email to view details</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        let allEmails = [];
+        let filteredEmails = [];
+        let selectedEmail = null;
+        let selectedEmailFilename = null;
+        let currentTab = 'html';
+        let autoRefreshInterval = null;
+
+        // Dark mode
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+            localStorage.setItem('darkMode', document.documentElement.classList.contains('dark'));
+        }
+
+        // Initialize dark mode from localStorage
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.documentElement.classList.add('dark');
+        }
+
+        // Format utilities
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return 'Neznámý';
+            const date = new Date(timestamp * 1000);
+            const now = new Date();
+            const diff = now - date;
+
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return Math.floor(diff / 60000) + ' min';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + ' h';
+
+            return date.toLocaleString('en-US');
+        }
+
+        function truncate(str, length) {
+            return str.length > length ? str.substring(0, length) + '...' : str;
+        }
+
+        // Load emails list
+        async function loadEmails() {
+            const refreshBtn = document.getElementById('refreshBtn');
+            const refreshIcon = document.getElementById('refreshIcon');
+
+            refreshBtn.disabled = true;
+            refreshIcon.classList.add('animate-spin');
+
+            try {
+                const response = await fetch('/api/emails');
+                const data = await response.json();
+
+                allEmails = data.emails || [];
+
+                // Update header stats
+                document.getElementById('headerTotalEmails').textContent = data.total;
+                document.getElementById('headerTotalSize').textContent = formatSize(data.totalSize);
+
+                // Filter and render
+                filterEmails();
+
+                // Re-select if email still exists
+                if (selectedEmailFilename) {
+                    const stillExists = allEmails.find(e => e.filename === selectedEmailFilename);
+                    if (stillExists) {
+                        // Keep selection
+                    } else {
+                        // Email was deleted, clear selection
+                        selectedEmailFilename = null;
+                        selectedEmail = null;
+                        renderEmailDetail();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load emails:', error);
+                document.getElementById('emailList').innerHTML = `
+                    <div class="p-4 text-center text-red-500">
+                        Error loading: ${error.message}
+                    </div>
+                `;
+            } finally {
+                refreshBtn.disabled = false;
+                refreshIcon.classList.remove('animate-spin');
+            }
+        }
+
+        // Filter emails based on search
+        function filterEmails() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            if (!searchTerm) {
+                filteredEmails = allEmails;
+            } else {
+                filteredEmails = allEmails.filter(email => {
+                    return (email.subject || '').toLowerCase().includes(searchTerm) ||
+                           (email.from || '').toLowerCase().includes(searchTerm) ||
+                           (email.to || '').toLowerCase().includes(searchTerm);
+                });
+            }
+
+            renderEmailList();
+        }
+
+        // Render email list
+        function renderEmailList() {
+            const emailList = document.getElementById('emailList');
+
+            if (filteredEmails.length === 0) {
+                emailList.innerHTML = `
+                    <div class="p-8 text-center">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                        </svg>
+                        <p class="text-gray-500 dark:text-gray-400">No emails</p>
+                    </div>
+                `;
+                return;
+            }
+
+            emailList.innerHTML = filteredEmails.map(email => `
+                <div
+                    onclick="selectEmail('${email.filename}')"
+                    class="email-item border-b border-gray-200 dark:border-gray-700 p-4 hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer transition-colors ${selectedEmailFilename === email.filename ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-l-primary-500' : ''} ${!email.isRead ? 'bg-blue-50 dark:bg-blue-900/10' : ''}"
+                >
+                    <div class="flex items-start justify-between mb-2">
+                        <input
+                            type="checkbox"
+                            class="email-checkbox mt-1 w-4 h-4 text-primary-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500"
+                            data-filename="${email.filename}"
+                            onclick="event.stopPropagation()"
+                        >
+                        <div class="flex-1 ml-3">
+                            <div class="flex items-center space-x-2">
+                                ${!email.isRead ? '<span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>' : ''}
+                                <div class="${!email.isRead ? 'font-bold' : 'font-semibold'} text-gray-900 dark:text-white text-sm">
+                                    ${email.subject || '(No subject)'}
+                                </div>
+                            </div>
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                ${truncate(email.from, 40)}
+                            </div>
+                            <div class="flex items-center space-x-2 mt-1">
+                                <span class="text-xs text-gray-500 dark:text-gray-400">${formatDate(email.timestamp)}</span>
+                                ${email.attachmentCount > 0 ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200">📎 ${email.attachmentCount}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Select email and load full detail
+        async function selectEmail(filename) {
+            selectedEmailFilename = filename;
+
+            try {
+                const response = await fetch(`/api/emails/${filename}/full`);
+                selectedEmail = await response.json();
+
+                // Automaticky označit jako přečtený
+                if (!selectedEmail.isRead) {
+                    await markAsRead(filename);
+                    selectedEmail.isRead = true;
+                }
+
+                renderEmailDetail();
+            } catch (error) {
+                console.error('Failed to load email detail:', error);
+                document.getElementById('emailDetail').innerHTML = `
+                    <div class="p-4 text-center text-red-500">
+                        Error loading details: ${error.message}
+                    </div>
+                `;
+            }
+
+            // Re-render list to highlight selected
+            renderEmailList();
+        }
+
+        // Mark email as read
+        async function markAsRead(filename) {
+            try {
+                await fetch(`/api/emails/${filename}/read`, { method: 'POST' });
+                // Update local cache
+                const email = allEmails.find(e => e.filename === filename);
+                if (email) email.isRead = true;
+            } catch (error) {
+                console.error('Failed to mark as read:', error);
+            }
+        }
+
+        // Mark email as unread
+        async function markAsUnread(filename) {
+            try {
+                await fetch(`/api/emails/${filename}/unread`, { method: 'POST' });
+                // Update local cache
+                const email = allEmails.find(e => e.filename === filename);
+                if (email) email.isRead = false;
+                if (selectedEmail && selectedEmail.filename === filename) {
+                    selectedEmail.isRead = false;
+                }
+                renderEmailDetail();
+                renderEmailList();
+            } catch (error) {
+                console.error('Failed to mark as unread:', error);
+            }
+        }
+
+        // Render email detail with tabs
+        function renderEmailDetail() {
+            const detailContainer = document.getElementById('emailDetail');
+
+            if (!selectedEmail) {
+                detailContainer.innerHTML = `
+                    <div class="text-center">
+                        <svg class="w-24 h-24 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <p class="text-lg text-gray-500 dark:text-gray-400">Select an email to view details</p>
+                    </div>
+                `;
+                return;
+            }
+
+            detailContainer.innerHTML = `
+                <div class="flex flex-col h-full w-full">
+                    <!-- Email Header -->
+                    <div class="border-b border-gray-200 dark:border-gray-700 p-4">
+                        <div class="flex items-start justify-between mb-4">
+                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white flex-1">${selectedEmail.subject || '(No subject)'}</h2>
+                            <div class="flex space-x-2 ml-4">
+                                ${selectedEmail.isRead ? `
+                                    <button onclick="markAsUnread('${selectedEmail.filename}')" class="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
+                                        ✉️ Mark as unread
+                                    </button>
+                                ` : ''}
+                                <a href="/api/emails/${selectedEmail.filename}.eml" download class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded transition-colors">
+                                    💾 Export .eml
+                                </a>
+                                <button onclick="deleteEmail('${selectedEmail.filename}')" class="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
+                                    🗑️ Delete
+                                </button>
+                            </div>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex">
+                                <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">From:</span>
+                                <span class="text-gray-900 dark:text-white">${selectedEmail.from}</span>
+                            </div>
+                            <div class="flex">
+                                <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">To:</span>
+                                <span class="text-gray-900 dark:text-white">${selectedEmail.to}</span>
+                            </div>
+                            ${selectedEmail.cc ? `
+                            <div class="flex">
+                                <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Cc:</span>
+                                <span class="text-gray-900 dark:text-white">${selectedEmail.cc}</span>
+                            </div>
+                            ` : ''}
+                            <div class="flex">
+                                <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Date:</span>
+                                <span class="text-gray-900 dark:text-white">${selectedEmail.date ? new Date(selectedEmail.date).toLocaleString('en-US') : 'Unknown'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabs -->
+                    <div class="border-b border-gray-200 dark:border-gray-700">
+                        <nav class="flex space-x-1 px-6" role="tablist">
+                            ${renderTab('html', 'HTML', selectedEmail.htmlBody)}
+                            ${renderTab('text', 'Text', selectedEmail.textBody)}
+                            ${renderTab('headers', 'Headers', true)}
+                            ${renderTab('raw', 'Raw', selectedEmail.rawContent)}
+                            ${renderTab('attachments', `Attachments (${selectedEmail.attachments.length})`, selectedEmail.attachments.length > 0)}
+                        </nav>
+                    </div>
+
+                    <!-- Tab Content -->
+                    <div class="flex-1 overflow-y-auto w-full">
+                        ${renderTabContent()}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTab(tabName, label, enabled) {
+            const isActive = currentTab === tabName;
+            const isDisabled = !enabled;
+            return `
+                <button
+                    onclick="${isDisabled ? '' : `switchTab('${tabName}')`}"
+                    class="px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        isActive
+                            ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                            : isDisabled
+                                ? 'border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600'
+                    }"
+                    ${isDisabled ? 'disabled' : ''}
+                >
+                    ${label}
+                </button>
+            `;
+        }
+
+        function renderTabContent() {
+            if (!selectedEmail) return '';
+
+            switch (currentTab) {
+                case 'html':
+                    if (selectedEmail.htmlBody) {
+                        return `<iframe srcdoc="${escapeHtml(selectedEmail.htmlBody)}" sandbox="" class="w-full h-full border-0"></iframe>`;
+                    } else if (selectedEmail.textBody) {
+                        // Fallback: zobrazit textový obsah jako HTML (escaped)
+                        return `<pre class="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono p-4 w-full h-full">${escapeHtml(selectedEmail.textBody)}</pre>`;
+                    } else {
+                        return '<div class="text-gray-500 dark:text-gray-400 text-center py-8">No content</div>';
+                    }
+
+                case 'text':
+                    return selectedEmail.textBody
+                        ? `<pre class="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono p-4 w-full h-full">${escapeHtml(selectedEmail.textBody)}</pre>`
+                        : '<div class="text-gray-500 dark:text-gray-400 text-center py-8">No text content</div>';
+
+                case 'headers':
+                    return `<div class="p-4 space-y-2 w-full">${Object.entries(selectedEmail.headers).map(([key, value]) => {
+                        // Zobrazit hlavičky čitelně
+                        let displayValue;
+                        if (typeof value === 'object' && value !== null) {
+                            // Pokud je to parsovaná email hlavička s text vlastností (from, to, cc, atd.)
+                            if (value.text) {
+                                displayValue = value.text;
+                            } else if (value.value !== undefined) {
+                                // Pokud má value vlastnost (např. content-type)
+                                if (value.params && Object.keys(value.params).length > 0) {
+                                    // Zobrazit value + parametry v čitelné formě
+                                    const params = Object.entries(value.params).map(([k, v]) => `${k}=${v}`).join('; ');
+                                    displayValue = `${value.value}; ${params}`;
+                                } else {
+                                    displayValue = String(value.value);
+                                }
+                            } else if (Array.isArray(value)) {
+                                // Pokud je to pole, zobrazit jako JSON
+                                displayValue = JSON.stringify(value, null, 2);
+                            } else {
+                                // Jinak zobrazit celý objekt jako JSON
+                                displayValue = JSON.stringify(value, null, 2);
+                            }
+                        } else {
+                            displayValue = String(value);
+                        }
+                        return `
+                        <div class="flex border-b border-gray-200 dark:border-gray-700 pb-2">
+                            <span class="font-semibold text-gray-600 dark:text-gray-400 w-48 flex-shrink-0">${escapeHtml(key)}:</span>
+                            <span class="text-gray-900 dark:text-white break-all whitespace-pre-wrap font-mono text-sm">${escapeHtml(displayValue)}</span>
+                        </div>
+                        `;
+                    }).join('')}</div>`;
+
+                case 'raw':
+                    return `<pre class="text-xs text-gray-900 dark:text-gray-100 font-mono p-4 w-full h-full whitespace-pre-wrap break-all">${escapeHtml(selectedEmail.rawContent)}</pre>`;
+
+                case 'attachments':
+                    if (selectedEmail.attachments.length === 0) {
+                        return '<div class="text-gray-500 dark:text-gray-400 text-center py-8">No attachments</div>';
+                    }
+                    return `<div class="p-4 w-full"><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        ${selectedEmail.attachments.map(att => `
+                            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-lg transition-shadow">
+                                ${att.isImage ? `
+                                    <img src="/api/emails/${selectedEmail.filename}/attachments/${att.index}/thumb"
+                                         class="w-full h-40 object-cover rounded mb-3"
+                                         alt="${escapeHtml(att.filename)}"
+                                         onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EImage%3C/text%3E%3C/svg%3E'">
+                                ` : `
+                                    <div class="w-full h-40 bg-gray-100 dark:bg-gray-700 rounded mb-3 flex items-center justify-center">
+                                        <svg class="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                    </div>
+                                `}
+                                <div class="text-sm font-semibold text-gray-900 dark:text-white truncate mb-1">${escapeHtml(att.filename)}</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mb-3">${formatSize(att.size)} • ${att.contentType}</div>
+                                <a href="/api/emails/${selectedEmail.filename}/attachments/${att.index}"
+                                   download="${escapeHtml(att.filename)}"
+                                   class="block w-full text-center px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm rounded transition-colors">
+                                    💾 Download
+                                </a>
+                            </div>
+                        `).join('')}
+                    </div></div>`;
+
+                default:
+                    return '';
+            }
+        }
+
+        function switchTab(tabName) {
+            currentTab = tabName;
+            renderEmailDetail();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Bulk actions
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            document.querySelectorAll('.email-checkbox').forEach(cb => {
+                cb.checked = selectAll;
+            });
+        }
+
+        async function deleteSelected() {
+            const selected = Array.from(document.querySelectorAll('.email-checkbox:checked'))
+                .map(cb => cb.dataset.filename);
+
+            if (selected.length === 0) {
+                alert('No emails selected');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete ${selected.length} emails?`)) return;
+
+            for (const filename of selected) {
+                try {
+                    await fetch(`/api/emails/${filename}`, { method: 'DELETE' });
+                } catch (error) {
+                    console.error('Failed to delete:', filename, error);
+                }
+            }
+
+            document.getElementById('selectAll').checked = false;
+            await loadEmails();
+        }
+
+        async function deleteAll() {
+            if (!confirm('Are you sure you want to delete ALL emails? This action cannot be undone!')) return;
+
+            try {
+                await fetch('/api/emails/all', { method: 'DELETE' });
+                selectedEmail = null;
+                selectedEmailFilename = null;
+                await loadEmails();
+            } catch (error) {
+                alert('Error deleting: ' + error.message);
+            }
+        }
+
+        async function deleteEmail(filename) {
+            if (!confirm('Are you sure you want to delete this email?')) return;
+
+            try {
+                await fetch(`/api/emails/${filename}`, { method: 'DELETE' });
+                selectedEmail = null;
+                selectedEmailFilename = null;
+                await loadEmails();
+            } catch (error) {
+                alert('Error deleting: ' + error.message);
+            }
+        }
+
+        // Auto-refresh
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(() => {
+                loadEmails();
+            }, 10000); // 10 seconds
+        }
+
+        // Initialize
+        loadEmails();
+        startAutoRefresh();
+    </script>
+</body>
+</html>

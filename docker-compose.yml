@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mailrider:
+    image: petrfilip/mailrider:latest  # Replace with your Docker Hub username
+    # If building locally, comment the line above and uncomment below:
+    # build: .
+    container_name: mailrider
+    ports:
+      - "2587:2587"  # SMTP submission port
+      - "1143:143"   # IMAP port
+      - "8082:8082"  # Web UI port
+    volumes:
+      # Persist email data between container restarts
+      - mailrider-data:/var/mail/faktron.local
+    environment:
+      # SMTP configuration
+      - SMTP_PORT=2587
+      # Web UI port
+      - WEB_PORT=8082
+      # Mail storage location (inside container)
+      - MAILDIR_BASE=/var/mail/faktron.local
+      # MailRider user configuration
+      - MAILRIDER_USER=inbox
+      - MAILRIDER_DOMAIN=mailrider.local
+      # Logging level (debug, info, warn, error)
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "143"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mailrider-data:
+    driver: local
+
+# Usage:
+# 1. Run: docker-compose up -d
+# 2. Access Web UI: http://localhost:8082
+

@@ -1,0 +1,45 @@
+{
+  "name": "mailrider",
+  "version": "1.0.0",
+  "description": "Universal SMTP + IMAP mail server for local development. Routes all emails to one inbox.",
+  "main": "src/smtp-server.js",
+  "scripts": {
+    "start": "node src/smtp-server.js",
+    "docker:build": "docker build -t mailrider .",
+    "docker:run": "docker run -d -p 2587:2587 -p 1143:143 -p 8082:8082 --name mailrider mailrider"
+  },
+  "keywords": [
+    "smtp",
+    "imap",
+    "mail",
+    "email",
+    "mailrider",
+    "maildir",
+    "development",
+    "testing",
+    "catch-all",
+    "dovecot",
+    "mail-server"
+  ],
+  "author": "Petr Filip",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/petrfilip/mailrider.git"
+  },
+  "homepage": "https://github.com/petrfilip/mailrider#readme",
+  "bugs": {
+    "url": "https://github.com/petrfilip/mailrider/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mailparser": "^3.7.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "sharp": "^0.33.5",
+    "smtp-server": "^3.13.4"
+  }
+}
