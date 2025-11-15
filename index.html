@@ -129,13 +129,13 @@
                         🐳 Using Docker Run
                     </h3>
                     <div class="code-block">
-                        <code>docker run -d \
+                        <pre><code>docker run -d \
   -p 2587:2587 \
   -p 1143:143 \
   -p 8082:8082 \
   -v mailrider-data:/var/mail/faktron.local \
   --name mailrider \
-  petrfilip/mailrider:latest</code>
+  petrfilip/mailrider:latest</code></pre>
                     </div>
                 </div>
 
@@ -145,7 +145,7 @@
                         📦 Using Docker Compose
                     </h3>
                     <div class="code-block">
-                        <code># Save as docker-compose.yml
+                        <pre><code># Save as docker-compose.yml
 version: '3.8'
 services:
   mailrider:
@@ -158,10 +158,10 @@ services:
       - mailrider-data:/var/mail/faktron.local
     restart: unless-stopped
 volumes:
-  mailrider-data:</code>
+  mailrider-data:</code></pre>
                     </div>
                     <div class="mt-4 code-block">
-                        <code>docker-compose up -d</code>
+                        <pre><code>docker-compose up -d</code></pre>
                     </div>
                 </div>
 
@@ -184,7 +184,7 @@ volumes:
                         📨 Send a Test Email
                     </h3>
                     <div class="code-block">
-                        <code>echo -e "From: test@example.com\nTo: user@anydomain.com\nSubject: Test\n\nHello!" | curl --url "smtp://localhost:2587" --mail-from "test@example.com" --mail-rcpt "user@anydomain.com" --upload-file -</code>
+                        <pre><code>echo -e "From: test@example.com\nTo: user@anydomain.com\nSubject: Test\n\nHello!" | curl --url "smtp://localhost:2587" --mail-from "test@example.com" --mail-rcpt "user@anydomain.com" --upload-file -</code></pre>
                     </div>
                     <p class="mt-4 text-gray-600">
                         All emails sent to <strong>any address</strong> will appear in the Web UI and IMAP inbox!
