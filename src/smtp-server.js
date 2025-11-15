@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const pino = require('pino');
 const express = require('express');
 const sharp = require('sharp');
+const multer = require('multer');
 
 // Logger
 const logger = pino({
@@ -222,6 +223,35 @@ async function saveToMaildir(emailBuffer) {
 }
 
 /**
+ * Format email address for display (removes quotes from name)
+ * @param {Object} addressObj - Parsed address object from mailparser
+ * @returns {string} Formatted email address
+ */
+function formatEmailAddress(addressObj) {
+  if (!addressObj) return 'Unknown';
+
+  // addressObj.value is an array of address objects
+  if (addressObj.value && addressObj.value.length > 0) {
+    const addresses = addressObj.value.map(addr => {
+      const name = addr.name || '';
+      const address = addr.address || '';
+
+      if (name && address) {
+        // Remove quotes from name if present
+        const cleanName = name.replace(/^["']|["']$/g, '');
+        return `${cleanName} <${address}>`;
+      }
+      return address || 'Unknown';
+    });
+    return addresses.join(', ');
+  }
+
+  // Fallback to text property (remove quotes if present)
+  const text = addressObj.text || 'Unknown';
+  return text.replace(/"([^"]+)"/g, '$1');
+}
+
+/**
  * Parse a zobraz metadata emailu (pro logging)
  */
 async function parseEmailMetadata(emailBuffer) {
@@ -229,8 +259,8 @@ async function parseEmailMetadata(emailBuffer) {
     const parsed = await simpleParser(emailBuffer);
     return {
       messageId: parsed.messageId,
-      from: parsed.from?.text,
-      to: parsed.to?.text,
+      from: formatEmailAddress(parsed.from),
+      to: formatEmailAddress(parsed.to),
       subject: parsed.subject,
       date: parsed.date,
     };
@@ -244,6 +274,22 @@ async function parseEmailMetadata(emailBuffer) {
  * Web UI & API Server
  */
 const app = express();
+
+// Multer configuration for EML file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    // Accept only .eml files or message/rfc822 content type
+    if (file.originalname.endsWith('.eml') || file.mimetype === 'message/rfc822') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .eml files are allowed'));
+    }
+  },
+  limits: {
+    fileSize: 50 * 1024 * 1024, // Max 50MB per file
+  },
+});
 
 // Serve static HTML
 app.get('/', async (req, res) => {
@@ -283,8 +329,8 @@ app.get('/api/emails', async (req, res) => {
           filename: file,
           timestamp: parseInt(file.split('.')[0]),
           size: stats.size,
-          from: parsed.from?.text || 'Unknown',
-          to: parsed.to?.text || 'Unknown',
+          from: formatEmailAddress(parsed.from),
+          to: formatEmailAddress(parsed.to),
           subject: parsed.subject || '(No subject)',
           preview: (parsed.text || '').substring(0, 200),
           attachmentCount: parsed.attachments?.length || 0,
@@ -340,9 +386,32 @@ app.get('/api/emails/:filename/full', async (req, res) => {
 
     // Extract headers
     const headers = {};
+    const emailHeaderKeys = [
+      'from', 'to', 'cc', 'bcc', 'reply-to', 'sender',
+      'delivered-to', 'return-path',
+      'resent-from', 'resent-to', 'resent-cc', 'resent-bcc', 'resent-sender'
+    ];
+
     if (parsed.headers) {
       for (const [key, value] of parsed.headers) {
-        headers[key] = Array.isArray(value) ? value.join(', ') : value;
+        // Special handling for email address headers
+        if (emailHeaderKeys.includes(key.toLowerCase())) {
+          headers[key] = formatEmailAddress(value);
+        } else if (Array.isArray(value)) {
+          // If it's an array, convert each element to string
+          headers[key] = value.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              // For objects, try to get a meaningful string representation
+              return v.value || v.text || JSON.stringify(v);
+            }
+            return String(v);
+          }).join(', ');
+        } else if (typeof value === 'object' && value !== null) {
+          // For objects, try to get a meaningful string representation
+          headers[key] = value.value || value.text || JSON.stringify(value);
+        } else {
+          headers[key] = value;
+        }
       }
     }
 
@@ -359,9 +428,9 @@ app.get('/api/emails/:filename/full', async (req, res) => {
     res.json({
       filename,
       messageId: parsed.messageId,
-      from: parsed.from?.text || 'Unknown',
-      to: parsed.to?.text || 'Unknown',
-      cc: parsed.cc?.text,
+      from: formatEmailAddress(parsed.from),
+      to: formatEmailAddress(parsed.to),
+      cc: parsed.cc ? formatEmailAddress(parsed.cc) : undefined,
       subject: parsed.subject || '(No subject)',
       date: parsed.date,
       headers,
@@ -504,6 +573,51 @@ app.post('/api/emails/:filename/unread', async (req, res) => {
     res.json({ success: true, isRead: false });
   } catch (error) {
     logger.error({ error: error.message }, 'API error: mark as unread');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Import EML files
+app.post('/api/emails/import', upload.array('emlFiles', 100), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const results = {
+      total: req.files.length,
+      imported: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const file of req.files) {
+      try {
+        // Save the EML file content to Maildir
+        await saveToMaildir(file.buffer);
+        results.imported++;
+
+        logger.info({
+          filename: file.originalname,
+          size: file.size,
+        }, 'EML file imported successfully');
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          filename: file.originalname,
+          error: error.message,
+        });
+
+        logger.error({
+          filename: file.originalname,
+          error: error.message,
+        }, 'Failed to import EML file');
+      }
+    }
+
+    res.json(results);
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: import EML');
     res.status(500).json({ error: error.message });
   }
 });

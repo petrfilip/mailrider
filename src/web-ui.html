@@ -63,6 +63,13 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                             </svg>
                         </button>
+                        <!-- Import EML button -->
+                        <button onclick="openImportModal()" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <span>Import EML</span>
+                        </button>
                         <!-- Refresh button -->
                         <button onclick="loadEmails()" id="refreshBtn" class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors flex items-center space-x-2">
                             <svg class="w-4 h-4" id="refreshIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,6 +135,68 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
                         </svg>
                         <p class="text-lg">Select an email to view details</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Modal -->
+        <div id="importModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Import EML Files</h2>
+                        <button onclick="closeImportModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Drag & Drop Area -->
+                    <div id="dropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-primary-500 dark:hover:border-primary-400 transition-colors cursor-pointer">
+                        <input type="file" id="emlFileInput" accept=".eml,message/rfc822" multiple class="hidden" onchange="handleFileSelect(event)">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p class="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Drag & drop EML files here</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">or</p>
+                        <button onclick="document.getElementById('emlFileInput').click()" class="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors">
+                            Browse Files
+                        </button>
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-4">You can select multiple files (max 50MB each)</p>
+                    </div>
+
+                    <!-- Selected Files List -->
+                    <div id="selectedFilesList" class="mt-6 hidden">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Selected Files</h3>
+                        <div id="filesList" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div id="uploadProgress" class="mt-6 hidden">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Uploading...</span>
+                            <span id="progressPercent" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                            <div id="progressBar" class="bg-primary-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Import Results -->
+                    <div id="importResults" class="mt-6 hidden">
+                        <div id="resultsContent"></div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button onclick="closeImportModal()" class="px-6 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button id="importBtn" onclick="importFiles()" disabled class="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            Import Files
+                        </button>
                     </div>
                 </div>
             </div>
@@ -451,7 +520,7 @@
             switch (currentTab) {
                 case 'html':
                     if (selectedEmail.htmlBody) {
-                        return `<iframe srcdoc="${escapeHtml(selectedEmail.htmlBody)}" sandbox="" class="w-full h-full border-0"></iframe>`;
+                        return `<iframe srcdoc="${escapeForAttribute(selectedEmail.htmlBody)}" sandbox="" class="w-full h-full border-0"></iframe>`;
                     } else if (selectedEmail.textBody) {
                         // Fallback: zobrazit textový obsah jako HTML (escaped)
                         return `<pre class="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono p-4 w-full h-full">${escapeHtml(selectedEmail.textBody)}</pre>`;
@@ -548,6 +617,11 @@
             return div.innerHTML;
         }
 
+        // Escape HTML for use in srcdoc attribute (only escape quotes and special chars for attributes)
+        function escapeForAttribute(str) {
+            return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         // Bulk actions
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll').checked;
@@ -611,6 +685,253 @@
                 loadEmails();
             }, 10000); // 10 seconds
         }
+
+        // Import modal management
+        let selectedFiles = [];
+
+        function openImportModal() {
+            selectedFiles = [];
+            document.getElementById('importModal').classList.remove('hidden');
+            document.getElementById('selectedFilesList').classList.add('hidden');
+            document.getElementById('uploadProgress').classList.add('hidden');
+            document.getElementById('importResults').classList.add('hidden');
+            document.getElementById('importBtn').disabled = true;
+            document.getElementById('emlFileInput').value = '';
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').classList.add('hidden');
+            selectedFiles = [];
+        }
+
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            addFiles(files);
+        }
+
+        function addFiles(files) {
+            // Filter only .eml files
+            const emlFiles = files.filter(file =>
+                file.name.endsWith('.eml') || file.type === 'message/rfc822'
+            );
+
+            if (emlFiles.length === 0) {
+                alert('Please select only .eml files');
+                return;
+            }
+
+            // Add to selected files (avoid duplicates)
+            emlFiles.forEach(file => {
+                const exists = selectedFiles.some(f => f.name === file.name && f.size === file.size);
+                if (!exists) {
+                    selectedFiles.push(file);
+                }
+            });
+
+            renderFilesList();
+            document.getElementById('importBtn').disabled = selectedFiles.length === 0;
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            renderFilesList();
+            document.getElementById('importBtn').disabled = selectedFiles.length === 0;
+        }
+
+        function renderFilesList() {
+            const filesList = document.getElementById('filesList');
+            const selectedFilesList = document.getElementById('selectedFilesList');
+
+            if (selectedFiles.length === 0) {
+                selectedFilesList.classList.add('hidden');
+                return;
+            }
+
+            selectedFilesList.classList.remove('hidden');
+
+            filesList.innerHTML = selectedFiles.map((file, index) => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="flex items-center space-x-3 flex-1 min-w-0">
+                        <svg class="w-5 h-5 text-primary-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${escapeHtml(file.name)}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">${formatSize(file.size)}</p>
+                        </div>
+                    </div>
+                    <button onclick="removeFile(${index})" class="ml-3 text-red-500 hover:text-red-700 dark:hover:text-red-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        async function importFiles() {
+            if (selectedFiles.length === 0) return;
+
+            const importBtn = document.getElementById('importBtn');
+            const uploadProgress = document.getElementById('uploadProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+            const importResults = document.getElementById('importResults');
+            const resultsContent = document.getElementById('resultsContent');
+
+            // Disable import button and show progress
+            importBtn.disabled = true;
+            uploadProgress.classList.remove('hidden');
+            importResults.classList.add('hidden');
+
+            try {
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('emlFiles', file);
+                });
+
+                // Upload with progress
+                const xhr = new XMLHttpRequest();
+
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        progressBar.style.width = percent + '%';
+                        progressPercent.textContent = percent + '%';
+                    }
+                });
+
+                const response = await new Promise((resolve, reject) => {
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve(JSON.parse(xhr.responseText));
+                        } else {
+                            reject(new Error('Upload failed'));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error('Network error'));
+                    xhr.open('POST', '/api/emails/import');
+                    xhr.send(formData);
+                });
+
+                // Show results
+                uploadProgress.classList.add('hidden');
+                importResults.classList.remove('hidden');
+
+                const successCount = response.imported || 0;
+                const failCount = response.failed || 0;
+
+                let resultsHtml = `
+                    <div class="p-4 rounded-lg ${successCount > 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'}">
+                        <div class="flex items-start space-x-3 mb-3">
+                            <svg class="w-6 h-6 ${successCount > 0 ? 'text-green-500' : 'text-red-500'} flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                ${successCount > 0 ? `
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                ` : `
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                `}
+                            </svg>
+                            <div class="flex-1">
+                                <h4 class="text-lg font-semibold ${successCount > 0 ? 'text-green-900 dark:text-green-100' : 'text-red-900 dark:text-red-100'}">
+                                    Import ${successCount > 0 ? 'Completed' : 'Failed'}
+                                </h4>
+                                <p class="text-sm ${successCount > 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'} mt-1">
+                                    Successfully imported: ${successCount} / ${response.total}
+                                    ${failCount > 0 ? `<br>Failed: ${failCount}` : ''}
+                                </p>
+                            </div>
+                        </div>
+                `;
+
+                // Show errors if any
+                if (response.errors && response.errors.length > 0) {
+                    resultsHtml += `
+                        <div class="mt-3 pt-3 border-t border-red-200 dark:border-red-800">
+                            <p class="text-sm font-semibold text-red-900 dark:text-red-100 mb-2">Errors:</p>
+                            <ul class="text-xs text-red-700 dark:text-red-300 space-y-1">
+                                ${response.errors.map(err => `
+                                    <li class="flex items-start space-x-2">
+                                        <span class="flex-shrink-0">•</span>
+                                        <span><strong>${escapeHtml(err.filename)}:</strong> ${escapeHtml(err.error)}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+
+                resultsHtml += `</div>`;
+                resultsContent.innerHTML = resultsHtml;
+
+                // Reload emails after successful import
+                if (successCount > 0) {
+                    setTimeout(() => {
+                        loadEmails();
+                    }, 1000);
+                }
+
+                // Reset for next import
+                selectedFiles = [];
+                renderFilesList();
+
+            } catch (error) {
+                console.error('Import failed:', error);
+                uploadProgress.classList.add('hidden');
+                importResults.classList.remove('hidden');
+                resultsContent.innerHTML = `
+                    <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <div class="flex items-start space-x-3">
+                            <svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <div>
+                                <h4 class="text-lg font-semibold text-red-900 dark:text-red-100">Import Failed</h4>
+                                <p class="text-sm text-red-700 dark:text-red-300 mt-1">${escapeHtml(error.message)}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } finally {
+                importBtn.disabled = false;
+                progressBar.style.width = '0%';
+                progressPercent.textContent = '0%';
+            }
+        }
+
+        // Drag & Drop functionality
+        const dropZone = document.getElementById('dropZone');
+
+        dropZone.addEventListener('click', () => {
+            document.getElementById('emlFileInput').click();
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('border-primary-500', 'dark:border-primary-400', 'bg-primary-50', 'dark:bg-primary-900/10');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-primary-500', 'dark:border-primary-400', 'bg-primary-50', 'dark:bg-primary-900/10');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-primary-500', 'dark:border-primary-400', 'bg-primary-50', 'dark:bg-primary-900/10');
+
+            const files = Array.from(e.dataTransfer.files);
+            addFiles(files);
+        });
+
+        // Close modal on ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeImportModal();
+            }
+        });
 
         // Initialize
         loadEmails();
