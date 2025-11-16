@@ -42,13 +42,6 @@ COPY config/dovecot.conf /etc/dovecot/dovecot.conf
 COPY config/start.sh /start.sh
 RUN chmod +x /start.sh
 
-# Create Dovecot users file
-# Format: username:password:uid:gid::home:shell
-ARG MAILRIDER_USER=inbox
-ARG MAILRIDER_DOMAIN=mailrider.local
-RUN echo "${MAILRIDER_USER}@${MAILRIDER_DOMAIN}:{PLAIN}test:5000:5000::/var/mail/faktron.local/inbox:/bin/false" > /etc/dovecot/users \
-    && chmod 644 /etc/dovecot/users
-
 # Expose ports
 EXPOSE 2587 143 8082
 
@@ -56,8 +49,8 @@ EXPOSE 2587 143 8082
 ENV SMTP_PORT=2587 \
     WEB_PORT=8082 \
     MAILDIR_BASE=/var/mail/faktron.local \
-    MAILRIDER_USER=${MAILRIDER_USER} \
-    MAILRIDER_DOMAIN=${MAILRIDER_DOMAIN} \
+    MAILRIDER_USER=inbox \
+    MAILRIDER_DOMAIN=mailrider.local \
     LOG_LEVEL=info \
     NODE_ENV=production
 
