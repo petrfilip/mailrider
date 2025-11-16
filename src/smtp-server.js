@@ -301,54 +301,196 @@ app.get('/', async (req, res) => {
   }
 });
 
+/**
+ * Najde všechny IMAP složky v Maildir
+ * @returns {Promise<Array<{name: string, path: string}>>} Seznam složek
+ */
+async function findMaildirFolders() {
+  const folders = [];
+
+  // INBOX (hlavní složka)
+  folders.push({ name: 'INBOX', path: MAILDIR_PATH });
+
+  try {
+    // Najdi všechny podsložky začínající tečkou (Maildir konvence pro IMAP složky)
+    const entries = await fs.readdir(MAILDIR_PATH, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.startsWith('.')) {
+        // Odstraň tečku ze začátku pro zobrazení
+        const folderName = entry.name.substring(1);
+        const folderPath = path.join(MAILDIR_PATH, entry.name);
+        folders.push({ name: folderName, path: folderPath });
+      }
+    }
+  } catch (error) {
+    logger.warn({ error: error.message }, 'Failed to scan for IMAP folders');
+  }
+
+  return folders;
+}
+
+/**
+ * Přečte emaily z jedné Maildir složky (new + cur)
+ * @param {string} folderName - Název složky pro zobrazení
+ * @param {string} folderPath - Cesta k Maildir složce
+ * @returns {Promise<Array>} Seznam emailů
+ */
+async function readEmailsFromFolder(folderName, folderPath) {
+  const emails = [];
+
+  // Čti z obou podsložek (new = nepřečtené, cur = přečtené)
+  const subfolders = ['new', 'cur'];
+
+  for (const subfolder of subfolders) {
+    const subfolderPath = path.join(folderPath, subfolder);
+
+    try {
+      const files = await fs.readdir(subfolderPath);
+
+      for (const file of files) {
+        // Přeskoč speciální soubory (Dovecot metadata)
+        if (file.startsWith('dovecot-')) continue;
+
+        const filePath = path.join(subfolderPath, file);
+
+        try {
+          const stats = await fs.stat(filePath);
+          const content = await fs.readFile(filePath);
+          const parsed = await simpleParser(content);
+
+          emails.push({
+            filename: file,
+            folder: folderName,
+            subfolder: subfolder, // 'new' nebo 'cur'
+            timestamp: parseInt(file.split('.')[0]) || 0,
+            size: stats.size,
+            from: formatEmailAddress(parsed.from),
+            to: formatEmailAddress(parsed.to),
+            subject: parsed.subject || '(No subject)',
+            preview: (parsed.text || '').substring(0, 200),
+            attachmentCount: parsed.attachments?.length || 0,
+            isRead: isRead(file),
+          });
+        } catch (parseError) {
+          // Skip malformed emails
+          logger.warn({ file, error: parseError.message }, 'Failed to parse email for API');
+        }
+      }
+    } catch (error) {
+      // Složka neexistuje nebo není přístupná
+      if (error.code !== 'ENOENT') {
+        logger.warn({ folderName, subfolder, error: error.message }, 'Failed to read subfolder');
+      }
+    }
+  }
+
+  return emails;
+}
+
+/**
+ * Najde email podle filename ve všech IMAP složkách
+ * @param {string} filename - Název souboru emailu
+ * @returns {Promise<{path: string, folder: string, subfolder: string}|null>} Cesta k emailu nebo null
+ */
+async function findEmailByFilename(filename) {
+  const folders = await findMaildirFolders();
+  const subfolders = ['new', 'cur'];
+
+  for (const folder of folders) {
+    for (const subfolder of subfolders) {
+      const emailPath = path.join(folder.path, subfolder, filename);
+
+      try {
+        await fs.access(emailPath);
+        return {
+          path: emailPath,
+          folder: folder.name,
+          subfolder: subfolder,
+        };
+      } catch {
+        // Email není v této složce, zkus další
+        
+      }
+    }
+  }
+
+  return null;
+}
+
 // API: Get all emails
 app.get('/api/emails', async (req, res) => {
   try {
-    const files = await fs.readdir(MAILDIR_NEW);
-    const emails = [];
+    const folders = await findMaildirFolders();
+    const allEmails = [];
     let totalSize = 0;
 
-    // Sort by timestamp (newest first)
-    files.sort((a, b) => {
-      const timestampA = parseInt(a.split('.')[0]);
-      const timestampB = parseInt(b.split('.')[0]);
-      return timestampB - timestampA;
-    });
-
-    for (const file of files) {
-      const filePath = path.join(MAILDIR_NEW, file);
-      const stats = await fs.stat(filePath);
-      const content = await fs.readFile(filePath);
-
-      totalSize += stats.size;
-
-      try {
-        const parsed = await simpleParser(content);
-
-        emails.push({
-          filename: file,
-          timestamp: parseInt(file.split('.')[0]),
-          size: stats.size,
-          from: formatEmailAddress(parsed.from),
-          to: formatEmailAddress(parsed.to),
-          subject: parsed.subject || '(No subject)',
-          preview: (parsed.text || '').substring(0, 200),
-          attachmentCount: parsed.attachments?.length || 0,
-          isRead: isRead(file),
-        });
-      } catch (parseError) {
-        // Skip malformed emails
-        logger.warn({ file, error: parseError.message }, 'Failed to parse email for API');
-      }
+    // Přečti emaily ze všech složek
+    for (const folder of folders) {
+      const folderEmails = await readEmailsFromFolder(folder.name, folder.path);
+      allEmails.push(...folderEmails);
     }
 
+    // Vypočítej celkovou velikost
+    totalSize = allEmails.reduce((sum, email) => sum + email.size, 0);
+
+    // Seřaď podle timestampu (nejnovější první)
+    allEmails.sort((a, b) => b.timestamp - a.timestamp);
+
     res.json({
-      total: emails.length,
+      total: allEmails.length,
       totalSize,
-      emails,
+      emails: allEmails,
     });
   } catch (error) {
     logger.error({ error: error.message }, 'API error: list emails');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Bulk delete all emails (must be before /:filename route)
+app.delete('/api/emails/all', async (req, res) => {
+  try {
+    const folders = await findMaildirFolders();
+    const subfolders = ['new', 'cur'];
+    let deletedCount = 0;
+
+    // Projdi všechny složky a podsložky
+    for (const folder of folders) {
+      for (const subfolder of subfolders) {
+        const subfolderPath = path.join(folder.path, subfolder);
+
+        try {
+          const files = await fs.readdir(subfolderPath);
+
+          for (const file of files) {
+            // Přeskoč speciální soubory (Dovecot metadata)
+            if (file.startsWith('dovecot-')) continue;
+
+            try {
+              await fs.unlink(path.join(subfolderPath, file));
+              deletedCount++;
+            } catch (err) {
+              logger.warn({ file, folder: folder.name, error: err.message }, 'Failed to delete email');
+            }
+          }
+        } catch (err) {
+          // Složka neexistuje nebo není přístupná
+          if (err.code !== 'ENOENT') {
+            logger.warn({ folder: folder.name, subfolder, error: err.message }, 'Failed to read subfolder for bulk delete');
+          }
+        }
+      }
+    }
+
+    // Cleanup entire cache to prevent memory leak
+    readStatusCache = {};
+    await saveReadStatus();
+
+    logger.info({ deletedCount }, 'Bulk delete completed');
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: bulk delete');
     res.status(500).json({ error: error.message });
   }
 });
@@ -357,9 +499,13 @@ app.get('/api/emails', async (req, res) => {
 app.delete('/api/emails/:filename', async (req, res) => {
   try {
     const filename = validateFilename(req.params.filename);
-    const filePath = path.join(MAILDIR_NEW, filename);
+    const emailLocation = await findEmailByFilename(filename);
 
-    await fs.unlink(filePath);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    await fs.unlink(emailLocation.path);
 
     // Cleanup cache to prevent memory leak
     if (readStatusCache && readStatusCache[filename]) {
@@ -367,7 +513,7 @@ app.delete('/api/emails/:filename', async (req, res) => {
       await saveReadStatus();
     }
 
-    logger.info({ filename }, 'Email deleted via API');
+    logger.info({ filename, folder: emailLocation.folder }, 'Email deleted via API');
     res.json({ success: true });
   } catch (error) {
     logger.error({ error: error.message }, 'API error: delete email');
@@ -379,9 +525,13 @@ app.delete('/api/emails/:filename', async (req, res) => {
 app.get('/api/emails/:filename/full', async (req, res) => {
   try {
     const filename = validateFilename(req.params.filename);
-    const filePath = path.join(MAILDIR_NEW, filename);
+    const emailLocation = await findEmailByFilename(filename);
 
-    const content = await fs.readFile(filePath);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const content = await fs.readFile(emailLocation.path);
     const parsed = await simpleParser(content);
 
     // Extract headers
@@ -427,6 +577,7 @@ app.get('/api/emails/:filename/full', async (req, res) => {
 
     res.json({
       filename,
+      folder: emailLocation.folder,
       messageId: parsed.messageId,
       from: formatEmailAddress(parsed.from),
       to: formatEmailAddress(parsed.to),
@@ -451,9 +602,13 @@ app.get('/api/emails/:filename/attachments/:index', async (req, res) => {
   try {
     const filename = validateFilename(req.params.filename);
     const attachmentIndex = parseInt(req.params.index);
-    const filePath = path.join(MAILDIR_NEW, filename);
+    const emailLocation = await findEmailByFilename(filename);
 
-    const content = await fs.readFile(filePath);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const content = await fs.readFile(emailLocation.path);
     const parsed = await simpleParser(content);
 
     if (!parsed.attachments || attachmentIndex >= parsed.attachments.length) {
@@ -476,9 +631,13 @@ app.get('/api/emails/:filename/attachments/:index/thumb', async (req, res) => {
   try {
     const filename = validateFilename(req.params.filename);
     const attachmentIndex = parseInt(req.params.index);
-    const filePath = path.join(MAILDIR_NEW, filename);
+    const emailLocation = await findEmailByFilename(filename);
 
-    const content = await fs.readFile(filePath);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const content = await fs.readFile(emailLocation.path);
     const parsed = await simpleParser(content);
 
     if (!parsed.attachments || attachmentIndex >= parsed.attachments.length) {
@@ -507,40 +666,17 @@ app.get('/api/emails/:filename/attachments/:index/thumb', async (req, res) => {
   }
 });
 
-// API: Bulk delete all emails
-app.delete('/api/emails/all', async (req, res) => {
-  try {
-    const files = await fs.readdir(MAILDIR_NEW);
-
-    let deletedCount = 0;
-    for (const file of files) {
-      try {
-        await fs.unlink(path.join(MAILDIR_NEW, file));
-        deletedCount++;
-      } catch (err) {
-        logger.warn({ file, error: err.message }, 'Failed to delete email');
-      }
-    }
-
-    // Cleanup entire cache to prevent memory leak
-    readStatusCache = {};
-    await saveReadStatus();
-
-    logger.info({ deletedCount }, 'Bulk delete completed');
-    res.json({ success: true, deletedCount });
-  } catch (error) {
-    logger.error({ error: error.message }, 'API error: bulk delete');
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // API: Export email as .eml
 app.get('/api/emails/:filename.eml', async (req, res) => {
   try {
     const filename = validateFilename(req.params.filename);
-    const filePath = path.join(MAILDIR_NEW, filename);
+    const emailLocation = await findEmailByFilename(filename);
 
-    const content = await fs.readFile(filePath);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const content = await fs.readFile(emailLocation.path);
 
     res.setHeader('Content-Type', 'message/rfc822');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.eml"`);

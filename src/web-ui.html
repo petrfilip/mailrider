@@ -102,6 +102,23 @@
                         </svg>
                     </div>
 
+                    <!-- Folder Filter -->
+                    <div class="relative">
+                        <select
+                            id="folderFilter"
+                            onchange="filterEmails()"
+                            class="w-full px-4 py-2 pl-10 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white appearance-none cursor-pointer"
+                        >
+                            <option value="">All folders</option>
+                        </select>
+                        <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                        </svg>
+                        <svg class="w-4 h-4 text-gray-400 absolute right-3 top-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </div>
+
                     <!-- Bulk Actions -->
                     <div class="flex items-center justify-between">
                         <label class="flex items-center space-x-2 cursor-pointer">
@@ -267,6 +284,9 @@
                 document.getElementById('headerTotalEmails').textContent = data.total;
                 document.getElementById('headerTotalSize').textContent = formatSize(data.totalSize);
 
+                // Update folder filter dropdown
+                updateFolderFilter();
+
                 // Filter and render
                 filterEmails();
 
@@ -295,19 +315,55 @@
             }
         }
 
-        // Filter emails based on search
+        // Update folder filter dropdown with available folders
+        function updateFolderFilter() {
+            const folderFilter = document.getElementById('folderFilter');
+            const currentSelection = folderFilter.value;
+
+            // Get unique folders from emails
+            const folders = new Set();
+            allEmails.forEach(email => {
+                if (email.folder) {
+                    folders.add(email.folder);
+                }
+            });
+
+            // Sort folders (INBOX first, then alphabetically)
+            const sortedFolders = Array.from(folders).sort((a, b) => {
+                if (a === 'INBOX') return -1;
+                if (b === 'INBOX') return 1;
+                return a.localeCompare(b);
+            });
+
+            // Update dropdown options
+            folderFilter.innerHTML = '<option value="">All folders</option>' +
+                sortedFolders.map(folder =>
+                    `<option value="${folder}">${folder}</option>`
+                ).join('');
+
+            // Restore previous selection if it still exists
+            if (currentSelection && sortedFolders.includes(currentSelection)) {
+                folderFilter.value = currentSelection;
+            }
+        }
+
+        // Filter emails based on search and folder
         function filterEmails() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const selectedFolder = document.getElementById('folderFilter').value;
 
-            if (!searchTerm) {
-                filteredEmails = allEmails;
-            } else {
-                filteredEmails = allEmails.filter(email => {
-                    return (email.subject || '').toLowerCase().includes(searchTerm) ||
-                           (email.from || '').toLowerCase().includes(searchTerm) ||
-                           (email.to || '').toLowerCase().includes(searchTerm);
-                });
-            }
+            filteredEmails = allEmails.filter(email => {
+                // Filter by search term
+                const matchesSearch = !searchTerm ||
+                    (email.subject || '').toLowerCase().includes(searchTerm) ||
+                    (email.from || '').toLowerCase().includes(searchTerm) ||
+                    (email.to || '').toLowerCase().includes(searchTerm);
+
+                // Filter by folder
+                const matchesFolder = !selectedFolder || email.folder === selectedFolder;
+
+                return matchesSearch && matchesFolder;
+            });
 
             renderEmailList();
         }
@@ -352,6 +408,7 @@
                             </div>
                             <div class="flex items-center space-x-2 mt-1">
                                 <span class="text-xs text-gray-500 dark:text-gray-400">${formatDate(email.timestamp)}</span>
+                                ${email.folder && email.folder !== 'INBOX' ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">📁 ${email.folder}</span>` : ''}
                                 ${email.attachmentCount > 0 ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200">📎 ${email.attachmentCount}</span>` : ''}
                             </div>
                         </div>
@@ -472,6 +529,12 @@
                                 <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Date:</span>
                                 <span class="text-gray-900 dark:text-white">${selectedEmail.date ? new Date(selectedEmail.date).toLocaleString('en-US') : 'Unknown'}</span>
                             </div>
+                            ${selectedEmail.folder ? `
+                            <div class="flex">
+                                <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Folder:</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${selectedEmail.folder === 'INBOX' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'}">📁 ${selectedEmail.folder}</span>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
 
