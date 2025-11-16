@@ -275,6 +275,9 @@ async function parseEmailMetadata(emailBuffer) {
  */
 const app = express();
 
+// Middleware for parsing JSON bodies
+app.use(express.json());
+
 // Multer configuration for EML file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -754,6 +757,167 @@ app.post('/api/emails/import', upload.array('emlFiles', 100), async (req, res) =
     res.json(results);
   } catch (error) {
     logger.error({ error: error.message }, 'API error: import EML');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Get list of all folders
+app.get('/api/folders', async (req, res) => {
+  try {
+    const folders = await findMaildirFolders();
+
+    // Add email counts for each folder
+    const foldersWithCounts = await Promise.all(folders.map(async (folder) => {
+      const emails = await readEmailsFromFolder(folder.name, folder.path);
+      return {
+        name: folder.name,
+        count: emails.length,
+        isDeletable: folder.name !== 'INBOX'
+      };
+    }));
+
+    res.json({ folders: foldersWithCounts });
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: list folders');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Create new folder
+app.post('/api/folders', async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Folder name is required' });
+    }
+
+    // Validate folder name
+    if (name.includes('/') || name.includes('\\') || name.includes('..') || name.startsWith('.')) {
+      return res.status(400).json({ error: 'Invalid folder name' });
+    }
+
+    if (name.toUpperCase() === 'INBOX') {
+      return res.status(400).json({ error: 'Cannot create folder named INBOX' });
+    }
+
+    // Create folder in Maildir format (starting with dot)
+    const folderPath = path.join(MAILDIR_PATH, `.${name}`);
+
+    // Check if folder already exists
+    try {
+      await fs.access(folderPath);
+      return res.status(409).json({ error: 'Folder already exists' });
+    } catch {
+      // Folder doesn't exist, continue
+    }
+
+    // Create folder structure
+    await fs.mkdir(path.join(folderPath, 'new'), { recursive: true });
+    await fs.mkdir(path.join(folderPath, 'cur'), { recursive: true });
+    await fs.mkdir(path.join(folderPath, 'tmp'), { recursive: true });
+
+    // Set correct ownership
+    await fs.chown(folderPath, 5000, 5000);
+    await fs.chown(path.join(folderPath, 'new'), 5000, 5000);
+    await fs.chown(path.join(folderPath, 'cur'), 5000, 5000);
+    await fs.chown(path.join(folderPath, 'tmp'), 5000, 5000);
+
+    logger.info({ folderName: name }, 'Folder created');
+    res.json({ success: true, folder: name });
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: create folder');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Delete folder
+app.delete('/api/folders/:name', async (req, res) => {
+  try {
+    const folderName = req.params.name;
+
+    if (folderName.toUpperCase() === 'INBOX') {
+      return res.status(403).json({ error: 'Cannot delete INBOX folder' });
+    }
+
+    const folderPath = path.join(MAILDIR_PATH, `.${folderName}`);
+
+    // Check if folder exists
+    try {
+      await fs.access(folderPath);
+    } catch {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    // Delete folder and all contents
+    await fs.rm(folderPath, { recursive: true, force: true });
+
+    logger.info({ folderName }, 'Folder deleted');
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: delete folder');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Move email to different folder
+app.post('/api/emails/:filename/move', async (req, res) => {
+  try {
+    const filename = validateFilename(req.params.filename);
+    const { targetFolder } = req.body;
+
+    if (!targetFolder || typeof targetFolder !== 'string') {
+      return res.status(400).json({ error: 'Target folder is required' });
+    }
+
+    // Find current location
+    const emailLocation = await findEmailByFilename(filename);
+    if (!emailLocation) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    // Check if already in target folder
+    if (emailLocation.folder === targetFolder) {
+      return res.status(400).json({ error: 'Email is already in this folder' });
+    }
+
+    // Determine target folder path
+    let targetFolderPath;
+    if (targetFolder === 'INBOX') {
+      targetFolderPath = MAILDIR_PATH;
+    } else {
+      targetFolderPath = path.join(MAILDIR_PATH, `.${targetFolder}`);
+
+      // Check if target folder exists
+      try {
+        await fs.access(targetFolderPath);
+      } catch {
+        return res.status(404).json({ error: 'Target folder not found' });
+      }
+    }
+
+    // Move file to target folder (preserve subfolder - new/cur)
+    const targetPath = path.join(targetFolderPath, emailLocation.subfolder, filename);
+
+    // Copy file to new location
+    await fs.copyFile(emailLocation.path, targetPath);
+
+    // Set correct ownership
+    await fs.chown(targetPath, 5000, 5000);
+    await fs.chmod(targetPath, 0o600);
+
+    // Delete original
+    await fs.unlink(emailLocation.path);
+
+    logger.info({
+      filename,
+      from: emailLocation.folder,
+      to: targetFolder
+    }, 'Email moved between folders');
+
+    res.json({ success: true, targetFolder });
+  } catch (error) {
+    logger.error({ error: error.message }, 'API error: move email');
     res.status(500).json({ error: error.message });
   }
 });

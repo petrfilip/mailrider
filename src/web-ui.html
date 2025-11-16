@@ -70,6 +70,13 @@
                             </svg>
                             <span>Import EML</span>
                         </button>
+                        <!-- Manage Folders button -->
+                        <button onclick="openFoldersModal()" class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                            </svg>
+                            <span>Folders</span>
+                        </button>
                         <!-- Refresh button -->
                         <button onclick="loadEmails()" id="refreshBtn" class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors flex items-center space-x-2">
                             <svg class="w-4 h-4" id="refreshIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -213,6 +220,55 @@
                         </button>
                         <button id="importBtn" onclick="importFiles()" disabled class="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                             Import Files
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Folders Modal -->
+        <div id="foldersModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Manage Folders</h2>
+                        <button onclick="closeFoldersModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Create New Folder -->
+                    <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Create New Folder</h3>
+                        <div class="flex space-x-2">
+                            <input
+                                type="text"
+                                id="newFolderName"
+                                placeholder="Folder name..."
+                                class="flex-1 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white"
+                            >
+                            <button onclick="createFolder()" class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors">
+                                Create
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Folders List -->
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Existing Folders</h3>
+                        <div id="foldersList" class="space-y-2">
+                            <div class="p-4 text-center text-gray-500 dark:text-gray-400">
+                                Loading folders...
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Close Button -->
+                    <div class="mt-6 flex justify-end">
+                        <button onclick="closeFoldersModal()" class="px-6 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors">
+                            Close
                         </button>
                     </div>
                 </div>
@@ -505,6 +561,27 @@
                                 <a href="/api/emails/${selectedEmail.filename}.eml" download class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded transition-colors">
                                     💾 Export .eml
                                 </a>
+                                <div class="relative inline-block">
+                                    <select
+                                        onchange="if(this.value) { moveEmailToFolder('${selectedEmail.filename}', this.value); this.value = ''; }"
+                                        class="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors cursor-pointer appearance-none pr-8"
+                                    >
+                                        <option value="">📁 Move to...</option>
+                                        ${(allEmails.reduce((folders, email) => {
+                                            if (email.folder && !folders.includes(email.folder) && email.folder !== selectedEmail.folder) {
+                                                folders.push(email.folder);
+                                            }
+                                            return folders;
+                                        }, []).sort((a, b) => {
+                                            if (a === 'INBOX') return -1;
+                                            if (b === 'INBOX') return 1;
+                                            return a.localeCompare(b);
+                                        })).map(folder => `<option value="${folder}">${folder}</option>`).join('')}
+                                    </select>
+                                    <svg class="w-4 h-4 text-white absolute right-2 top-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </div>
                                 <button onclick="deleteEmail('${selectedEmail.filename}')" class="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
                                     🗑️ Delete
                                 </button>
@@ -993,8 +1070,145 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 closeImportModal();
+                closeFoldersModal();
             }
         });
+
+        /**
+         * Folder Management
+         */
+        async function openFoldersModal() {
+            document.getElementById('foldersModal').classList.remove('hidden');
+            await loadFolders();
+        }
+
+        function closeFoldersModal() {
+            document.getElementById('foldersModal').classList.add('hidden');
+            document.getElementById('newFolderName').value = '';
+        }
+
+        async function loadFolders() {
+            try {
+                const response = await fetch('/api/folders');
+                const data = await response.json();
+
+                const foldersList = document.getElementById('foldersList');
+                const folders = data.folders || [];
+
+                if (folders.length === 0) {
+                    foldersList.innerHTML = `
+                        <div class="p-4 text-center text-gray-500 dark:text-gray-400">
+                            No folders found
+                        </div>
+                    `;
+                    return;
+                }
+
+                foldersList.innerHTML = folders.map(folder => `
+                    <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 text-${folder.name === 'INBOX' ? 'blue' : 'purple'}-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                            </svg>
+                            <div>
+                                <div class="font-semibold text-gray-900 dark:text-white">${folder.name}</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">${folder.count} email${folder.count !== 1 ? 's' : ''}</div>
+                            </div>
+                        </div>
+                        ${folder.isDeletable ? `
+                            <button onclick="deleteFolder('${folder.name}')" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
+                                Delete
+                            </button>
+                        ` : `
+                            <span class="text-xs text-gray-400 dark:text-gray-500">System folder</span>
+                        `}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load folders:', error);
+                document.getElementById('foldersList').innerHTML = `
+                    <div class="p-4 text-center text-red-500">
+                        Error loading folders: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function createFolder() {
+            const folderName = document.getElementById('newFolderName').value.trim();
+
+            if (!folderName) {
+                alert('Please enter a folder name');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/folders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: folderName })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create folder');
+                }
+
+                document.getElementById('newFolderName').value = '';
+                await loadFolders();
+                await loadEmails(); // Refresh email list to update folder filter
+            } catch (error) {
+                alert('Error creating folder: ' + error.message);
+            }
+        }
+
+        async function deleteFolder(folderName) {
+            if (!confirm(`Are you sure you want to delete the folder "${folderName}"? All emails in this folder will be permanently deleted.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/folders/${encodeURIComponent(folderName)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to delete folder');
+                }
+
+                await loadFolders();
+                await loadEmails(); // Refresh email list
+            } catch (error) {
+                alert('Error deleting folder: ' + error.message);
+            }
+        }
+
+        async function moveEmailToFolder(filename, targetFolder) {
+            try {
+                const response = await fetch(`/api/emails/${filename}/move`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetFolder })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to move email');
+                }
+
+                await loadEmails(); // Refresh email list
+
+                // Close email detail if it was open
+                if (selectedEmailFilename === filename) {
+                    selectedEmailFilename = null;
+                    selectedEmail = null;
+                    renderEmailDetail();
+                }
+            } catch (error) {
+                alert('Error moving email: ' + error.message);
+            }
+        }
 
         // Initialize
         loadEmails();
