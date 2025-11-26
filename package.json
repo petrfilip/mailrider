@@ -1,6 +1,6 @@
 {
   "name": "mailrider",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Universal SMTP + IMAP mail server for local development. Routes all emails to one inbox.",
   "main": "src/smtp-server.js",
   "scripts": {

@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   mailrider:
-    # image: petrfilip/mailrider:latest
+    image: petrfilip/mailrider:latest
     # If building locally, comment the line above and uncomment below:
-    build: .
+    # build: .
     container_name: mailrider
     ports:
       - "2587:2587"  # SMTP submission port
