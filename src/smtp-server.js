@@ -53,6 +53,131 @@ const MAILDIR_TMP = path.join(MAILDIR_PATH, 'tmp');
 // Metadata soubor pro přečtené/nepřečtené emaily
 const METADATA_FILE = path.join(MAILDIR_BASE, MAILRIDER_USER, '.read-status.json');
 
+// Email metadata cache pro rychlé načítání seznamu
+const EMAIL_CACHE_FILE = path.join(MAILDIR_BASE, MAILRIDER_USER, '.email-cache.json');
+let emailMetadataCache = {}; // In-memory cache: { filename: { from, to, subject, preview, attachmentCount, size, timestamp } }
+
+// Full email list cache (sorted, ready for pagination)
+let cachedEmailList = null; // Array of all emails, sorted by timestamp desc
+let cachedTotalSize = 0;
+let cacheLastUpdate = 0;
+const CACHE_TTL = 60000; // 60 seconds TTL for full list cache
+
+/**
+ * Load email metadata cache from disk
+ */
+async function loadEmailCache() {
+  try {
+    const data = await fs.readFile(EMAIL_CACHE_FILE, 'utf-8');
+    emailMetadataCache = JSON.parse(data);
+    logger.info({ count: Object.keys(emailMetadataCache).length }, 'Email cache loaded');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      logger.warn({ error: error.message }, 'Failed to load email cache');
+    }
+    emailMetadataCache = {};
+  }
+}
+
+/**
+ * Save email metadata cache to disk (debounced)
+ */
+let saveCacheTimeout = null;
+async function saveEmailCache() {
+  // Debounce saves to avoid excessive disk writes
+  if (saveCacheTimeout) clearTimeout(saveCacheTimeout);
+  saveCacheTimeout = setTimeout(async () => {
+    try {
+      await fs.writeFile(EMAIL_CACHE_FILE, JSON.stringify(emailMetadataCache), 'utf-8');
+    } catch (error) {
+      logger.warn({ error: error.message }, 'Failed to save email cache');
+    }
+  }, 1000);
+}
+
+/**
+ * Get cached metadata or parse email and cache it
+ */
+async function getEmailMetadata(filePath, filename) {
+  // Check cache first
+  if (emailMetadataCache[filename]) {
+    return emailMetadataCache[filename];
+  }
+
+  // Parse email and cache
+  try {
+    const stats = await fs.stat(filePath);
+    const content = await fs.readFile(filePath);
+    const parsed = await simpleParser(content);
+
+    const metadata = {
+      from: formatEmailAddress(parsed.from),
+      to: formatEmailAddress(parsed.to),
+      subject: parsed.subject || '(No subject)',
+      preview: (parsed.text || '').substring(0, 200),
+      attachmentCount: parsed.attachments?.length || 0,
+      size: stats.size,
+      timestamp: parseInt(filename.split('.')[0]) || 0,
+    };
+
+    emailMetadataCache[filename] = metadata;
+    saveEmailCache(); // Async save
+
+    return metadata;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Remove email from cache and invalidate list cache
+ */
+function removeFromCache(filename) {
+  delete emailMetadataCache[filename];
+  cachedEmailList = null; // Invalidate full list cache
+  saveEmailCache();
+}
+
+/**
+ * Invalidate full list cache (called when emails are added/removed)
+ */
+function invalidateListCache() {
+  cachedEmailList = null;
+  cacheLastUpdate = 0;
+}
+
+/**
+ * Get all emails with caching (builds sorted list once, reuses for pagination)
+ */
+async function getAllEmailsCached() {
+  const now = Date.now();
+
+  // Return cached list if still valid
+  if (cachedEmailList && (now - cacheLastUpdate) < CACHE_TTL) {
+    return { emails: cachedEmailList, totalSize: cachedTotalSize };
+  }
+
+  // Build fresh list
+  const folders = await findMaildirFolders();
+  const allEmails = [];
+  let totalSize = 0;
+
+  for (const folder of folders) {
+    const folderEmails = await readEmailsFromFolder(folder.name, folder.path);
+    allEmails.push(...folderEmails);
+  }
+
+  totalSize = allEmails.reduce((sum, email) => sum + email.size, 0);
+  allEmails.sort((a, b) => b.timestamp - a.timestamp);
+
+  // Cache the result
+  cachedEmailList = allEmails;
+  cachedTotalSize = totalSize;
+  cacheLastUpdate = now;
+
+  return { emails: allEmails, totalSize };
+}
+
 /**
  * Validates filename to prevent path traversal attacks
  * @param {string} filename - The filename to validate
@@ -334,7 +459,7 @@ async function findMaildirFolders() {
 }
 
 /**
- * Přečte emaily z jedné Maildir složky (new + cur)
+ * Přečte emaily z jedné Maildir složky (new + cur) - CACHED VERSION
  * @param {string} folderName - Název složky pro zobrazení
  * @param {string} folderPath - Cesta k Maildir složce
  * @returns {Promise<Array>} Seznam emailů
@@ -358,21 +483,20 @@ async function readEmailsFromFolder(folderName, folderPath) {
         const filePath = path.join(subfolderPath, file);
 
         try {
-          const stats = await fs.stat(filePath);
-          const content = await fs.readFile(filePath);
-          const parsed = await simpleParser(content);
+          // Use cached metadata if available
+          const metadata = await getEmailMetadata(filePath, file);
 
           emails.push({
             filename: file,
             folder: folderName,
             subfolder: subfolder, // 'new' nebo 'cur'
-            timestamp: parseInt(file.split('.')[0]) || 0,
-            size: stats.size,
-            from: formatEmailAddress(parsed.from),
-            to: formatEmailAddress(parsed.to),
-            subject: parsed.subject || '(No subject)',
-            preview: (parsed.text || '').substring(0, 200),
-            attachmentCount: parsed.attachments?.length || 0,
+            timestamp: metadata.timestamp,
+            size: metadata.size,
+            from: metadata.from,
+            to: metadata.to,
+            subject: metadata.subject,
+            preview: metadata.preview,
+            attachmentCount: metadata.attachmentCount,
             isRead: isRead(file),
           });
         } catch (parseError) {
@@ -421,29 +545,60 @@ async function findEmailByFilename(filename) {
   return null;
 }
 
-// API: Get all emails
+// API: Get emails with pagination support
 app.get('/api/emails', async (req, res) => {
   try {
-    const folders = await findMaildirFolders();
-    const allEmails = [];
-    let totalSize = 0;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const since = parseInt(req.query.since) || 0; // timestamp - get emails newer than this
+    const folderFilter = req.query.folder || ''; // optional folder filter
+    const searchTerm = (req.query.search || '').toLowerCase(); // optional search term
 
-    // Přečti emaily ze všech složek
-    for (const folder of folders) {
-      const folderEmails = await readEmailsFromFolder(folder.name, folder.path);
-      allEmails.push(...folderEmails);
+    // Use cached email list for fast response
+    const { emails: allEmails, totalSize } = await getAllEmailsCached();
+
+    // Apply folder filter if specified
+    let filteredEmails = allEmails;
+    if (folderFilter) {
+      filteredEmails = filteredEmails.filter(email => email.folder === folderFilter);
     }
 
-    // Vypočítej celkovou velikost
-    totalSize = allEmails.reduce((sum, email) => sum + email.size, 0);
+    // Apply search filter if specified
+    if (searchTerm) {
+      filteredEmails = filteredEmails.filter(email => {
+        const subject = (email.subject || '').toLowerCase();
+        const from = (email.from || '').toLowerCase();
+        const to = (email.to || '').toLowerCase();
+        return subject.includes(searchTerm) || from.includes(searchTerm) || to.includes(searchTerm);
+      });
+    }
 
-    // Seřaď podle timestampu (nejnovější první)
-    allEmails.sort((a, b) => b.timestamp - a.timestamp);
+    // If 'since' is provided, return only newer emails (for auto-refresh)
+    if (since > 0) {
+      const newerEmails = filteredEmails.filter(email => email.timestamp > since);
+      res.json({
+        total: allEmails.length,
+        totalSize,
+        emails: newerEmails,
+        newCount: newerEmails.length,
+        latestTimestamp: filteredEmails.length > 0 ? filteredEmails[0].timestamp : 0,
+      });
+      return;
+    }
+
+    // Apply pagination
+    const paginatedEmails = filteredEmails.slice(offset, offset + limit);
+    const hasMore = offset + limit < filteredEmails.length;
 
     res.json({
       total: allEmails.length,
+      filteredTotal: filteredEmails.length,
       totalSize,
-      emails: allEmails,
+      emails: paginatedEmails,
+      hasMore,
+      offset,
+      limit,
+      latestTimestamp: filteredEmails.length > 0 ? filteredEmails[0].timestamp : 0,
     });
   } catch (error) {
     logger.error({ error: error.message }, 'API error: list emails');
@@ -486,9 +641,12 @@ app.delete('/api/emails/all', async (req, res) => {
       }
     }
 
-    // Cleanup entire cache to prevent memory leak
+    // Cleanup entire caches to prevent memory leak
     readStatusCache = {};
     await saveReadStatus();
+    emailMetadataCache = {};
+    saveEmailCache();
+    invalidateListCache();
 
     logger.info({ deletedCount }, 'Bulk delete completed');
     res.json({ success: true, deletedCount });
@@ -510,11 +668,12 @@ app.delete('/api/emails/:filename', async (req, res) => {
 
     await fs.unlink(emailLocation.path);
 
-    // Cleanup cache to prevent memory leak
+    // Cleanup caches to prevent memory leak
     if (readStatusCache && readStatusCache[filename]) {
       delete readStatusCache[filename];
       await saveReadStatus();
     }
+    removeFromCache(filename);
 
     logger.info({ filename, folder: emailLocation.folder }, 'Email deleted via API');
     res.json({ success: true });
@@ -1002,6 +1161,16 @@ async function start() {
   try {
     // Vytvoř Maildir strukturu
     await ensureMaildirStructure();
+
+    // Load email metadata cache for fast list loading
+    await loadEmailCache();
+
+    // Pre-warm the full email list cache in background
+    getAllEmailsCached().then(() => {
+      logger.info('Email list cache pre-warmed');
+    }).catch(err => {
+      logger.warn({ error: err.message }, 'Failed to pre-warm email cache');
+    });
 
     // Start Web UI server
     const webServer = app.listen(WEB_PORT, '0.0.0.0', () => {

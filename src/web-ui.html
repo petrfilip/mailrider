@@ -101,7 +101,7 @@
                             type="text"
                             id="searchInput"
                             placeholder="Search emails..."
-                            onkeyup="filterEmails()"
+                            onkeyup="debouncedSearch()"
                             class="w-full px-4 py-2 pl-10 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                         >
                         <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,6 +285,16 @@
         let currentTab = 'html';
         let autoRefreshInterval = null;
 
+        // Pagination state
+        const PAGE_SIZE = 50;
+        let currentOffset = 0;
+        let hasMoreEmails = true;
+        let isLoadingMore = false;
+        let latestTimestamp = 0;
+        let totalEmails = 0;
+        let filteredTotal = 0;
+        let searchDebounceTimer = null;
+
         // Dark mode
         function toggleDarkMode() {
             document.documentElement.classList.toggle('dark');
@@ -322,8 +332,20 @@
             return str.length > length ? str.substring(0, length) + '...' : str;
         }
 
-        // Load emails list
-        async function loadEmails() {
+        // Build API URL with current filters
+        function buildApiUrl(baseParams = {}) {
+            const selectedFolder = document.getElementById('folderFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.trim();
+
+            const params = new URLSearchParams(baseParams);
+            if (selectedFolder) params.set('folder', selectedFolder);
+            if (searchTerm) params.set('search', searchTerm);
+
+            return `/api/emails?${params.toString()}`;
+        }
+
+        // Load emails list (initial load with pagination)
+        async function loadEmails(reset = true) {
             const refreshBtn = document.getElementById('refreshBtn');
             const refreshIcon = document.getElementById('refreshIcon');
 
@@ -331,27 +353,46 @@
             refreshIcon.classList.add('animate-spin');
 
             try {
-                const response = await fetch('/api/emails');
+                // Reset pagination state on fresh load
+                if (reset) {
+                    currentOffset = 0;
+                    allEmails = [];
+                    hasMoreEmails = true;
+                }
+
+                const url = buildApiUrl({ limit: PAGE_SIZE, offset: currentOffset });
+
+                const response = await fetch(url);
                 const data = await response.json();
 
-                allEmails = data.emails || [];
+                if (reset) {
+                    allEmails = data.emails || [];
+                } else {
+                    allEmails = [...allEmails, ...(data.emails || [])];
+                }
+
+                hasMoreEmails = data.hasMore;
+                latestTimestamp = data.latestTimestamp || 0;
+                totalEmails = data.total;
+                filteredTotal = data.filteredTotal || data.total;
+                currentOffset = allEmails.length;
 
                 // Update header stats
                 document.getElementById('headerTotalEmails').textContent = data.total;
                 document.getElementById('headerTotalSize').textContent = formatSize(data.totalSize);
 
-                // Update folder filter dropdown
-                updateFolderFilter();
+                // Update folder filter dropdown (only on initial load without search)
+                if (reset && !document.getElementById('searchInput').value.trim()) {
+                    updateFolderFilter();
+                }
 
-                // Filter and render
-                filterEmails();
+                // Render the list (no client-side filtering needed - server handles it)
+                renderEmailList();
 
                 // Re-select if email still exists
                 if (selectedEmailFilename) {
                     const stillExists = allEmails.find(e => e.filename === selectedEmailFilename);
-                    if (stillExists) {
-                        // Keep selection
-                    } else {
+                    if (!stillExists) {
                         // Email was deleted, clear selection
                         selectedEmailFilename = null;
                         selectedEmail = null;
@@ -369,6 +410,84 @@
                 refreshBtn.disabled = false;
                 refreshIcon.classList.remove('animate-spin');
             }
+        }
+
+        // Load more emails (infinite scroll)
+        async function loadMoreEmails() {
+            if (isLoadingMore || !hasMoreEmails) return;
+
+            isLoadingMore = true;
+            showLoadingIndicator();
+
+            try {
+                const url = buildApiUrl({ limit: PAGE_SIZE, offset: currentOffset });
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const newEmails = data.emails || [];
+                allEmails = [...allEmails, ...newEmails];
+                hasMoreEmails = data.hasMore;
+                currentOffset = allEmails.length;
+
+                // Render the updated list
+                renderEmailList();
+            } catch (error) {
+                console.error('Failed to load more emails:', error);
+            } finally {
+                isLoadingMore = false;
+                hideLoadingIndicator();
+            }
+        }
+
+        // Load new emails (auto-refresh - prepend new ones)
+        async function loadNewEmails() {
+            if (latestTimestamp === 0) return;
+
+            try {
+                const url = buildApiUrl({ since: latestTimestamp });
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const newEmails = data.emails || [];
+
+                if (newEmails.length > 0) {
+                    // Prepend new emails (they are newer)
+                    allEmails = [...newEmails, ...allEmails];
+                    latestTimestamp = data.latestTimestamp || latestTimestamp;
+                    currentOffset += newEmails.length;
+
+                    // Update header stats
+                    document.getElementById('headerTotalEmails').textContent = data.total;
+                    document.getElementById('headerTotalSize').textContent = formatSize(data.totalSize);
+
+                    // Render the updated list
+                    renderEmailList();
+                }
+            } catch (error) {
+                console.error('Failed to check for new emails:', error);
+            }
+        }
+
+        // Show loading indicator at bottom of list
+        function showLoadingIndicator() {
+            const emailList = document.getElementById('emailList');
+            const loader = document.createElement('div');
+            loader.id = 'loadMoreIndicator';
+            loader.className = 'p-4 text-center text-gray-500 dark:text-gray-400';
+            loader.innerHTML = `
+                <svg class="animate-spin h-5 w-5 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            `;
+            emailList.appendChild(loader);
+        }
+
+        function hideLoadingIndicator() {
+            const loader = document.getElementById('loadMoreIndicator');
+            if (loader) loader.remove();
         }
 
         // Update folder filter dropdown with available folders
@@ -403,32 +522,27 @@
             }
         }
 
-        // Filter emails based on search and folder
+        // Filter emails - triggers server-side reload with new filters
         function filterEmails() {
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const selectedFolder = document.getElementById('folderFilter').value;
+            // Reset and reload with current filter settings (server handles filtering)
+            loadEmails(true);
+        }
 
-            filteredEmails = allEmails.filter(email => {
-                // Filter by search term
-                const matchesSearch = !searchTerm ||
-                    (email.subject || '').toLowerCase().includes(searchTerm) ||
-                    (email.from || '').toLowerCase().includes(searchTerm) ||
-                    (email.to || '').toLowerCase().includes(searchTerm);
-
-                // Filter by folder
-                const matchesFolder = !selectedFolder || email.folder === selectedFolder;
-
-                return matchesSearch && matchesFolder;
-            });
-
-            renderEmailList();
+        // Debounced search - waits for user to stop typing
+        function debouncedSearch() {
+            if (searchDebounceTimer) {
+                clearTimeout(searchDebounceTimer);
+            }
+            searchDebounceTimer = setTimeout(() => {
+                filterEmails();
+            }, 300); // 300ms delay
         }
 
         // Render email list
         function renderEmailList() {
             const emailList = document.getElementById('emailList');
 
-            if (filteredEmails.length === 0) {
+            if (allEmails.length === 0) {
                 emailList.innerHTML = `
                     <div class="p-8 text-center">
                         <svg class="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -440,7 +554,7 @@
                 return;
             }
 
-            emailList.innerHTML = filteredEmails.map(email => `
+            emailList.innerHTML = allEmails.map(email => `
                 <div
                     onclick="selectEmail('${email.filename}')"
                     class="email-item border-b border-gray-200 dark:border-gray-700 p-4 hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer transition-colors ${selectedEmailFilename === email.filename ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-l-primary-500' : ''} ${!email.isRead ? 'bg-blue-50 dark:bg-blue-900/10' : ''}"
@@ -819,10 +933,10 @@
             }
         }
 
-        // Auto-refresh
+        // Auto-refresh (only check for new emails, don't reload all)
         function startAutoRefresh() {
             autoRefreshInterval = setInterval(() => {
-                loadEmails();
+                loadNewEmails();
             }, 10000); // 10 seconds
         }
 
@@ -1210,9 +1324,25 @@
             }
         }
 
+        // Setup infinite scroll
+        function setupInfiniteScroll() {
+            const emailList = document.getElementById('emailList');
+            emailList.addEventListener('scroll', () => {
+                // Check if scrolled near bottom (100px threshold)
+                const scrollTop = emailList.scrollTop;
+                const scrollHeight = emailList.scrollHeight;
+                const clientHeight = emailList.clientHeight;
+
+                if (scrollTop + clientHeight >= scrollHeight - 100) {
+                    loadMoreEmails();
+                }
+            });
+        }
+
         // Initialize
         loadEmails();
         startAutoRefresh();
+        setupInfiniteScroll();
     </script>
 </body>
 </html>
