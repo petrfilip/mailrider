@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.title="MailRider"
 LABEL org.opencontainers.image.description="Universal SMTP + IMAP mail server for local development"
 LABEL org.opencontainers.image.url="https://github.com/petrfilip/mailrider"
 LABEL org.opencontainers.image.source="https://github.com/petrfilip/mailrider"
-LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.version="1.3.0"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Install system dependencies

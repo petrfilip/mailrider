@@ -331,7 +331,7 @@ async function saveToMaildir(emailBuffer) {
       destination: MAILRIDER_EMAIL
     }, 'Email saved to Maildir');
 
-    return newPath;
+    return { path: newPath, filename };
   } catch (error) {
     logger.error({
       error: error.message,
@@ -1134,7 +1134,18 @@ const server = new SMTPServer({
         }, 'Receiving email');
 
         // Ulož do Maildir
-        await saveToMaildir(emailBuffer);
+        const { path: savedPath, filename } = await saveToMaildir(emailBuffer);
+
+        // Invalidovat cache - nový email se ihned objeví na API
+        invalidateListCache();
+
+        // Předpřipravit metadata nového emailu do cache
+        try {
+          await getEmailMetadata(savedPath, filename);
+          logger.debug({ filename }, 'New email metadata cached');
+        } catch (error) {
+          logger.warn({ filename, error: error.message }, 'Failed to cache new email metadata');
+        }
 
         callback();
       } catch (error) {
