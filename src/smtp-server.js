@@ -780,7 +780,8 @@ app.get('/api/emails/:filename/attachments/:index', async (req, res) => {
     const attachment = parsed.attachments[attachmentIndex];
 
     res.setHeader('Content-Type', attachment.contentType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${attachment.filename || 'attachment'}"`);
+    const safeFilename = (attachment.filename || 'attachment').replace(/[\r\n"]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     res.send(attachment.content);
   } catch (error) {
     logger.error({ error: error.message }, 'API error: download attachment');
@@ -999,7 +1000,15 @@ app.delete('/api/folders/:name', async (req, res) => {
       return res.status(403).json({ error: 'Cannot delete INBOX folder' });
     }
 
+    if (folderName.includes('/') || folderName.includes('\\') || folderName.includes('..') || folderName.startsWith('.')) {
+      return res.status(400).json({ error: 'Invalid folder name' });
+    }
+
     const folderPath = path.join(MAILDIR_PATH, `.${folderName}`);
+
+    if (!folderPath.startsWith(MAILDIR_PATH)) {
+      return res.status(400).json({ error: 'Invalid folder path' });
+    }
 
     // Check if folder exists
     try {

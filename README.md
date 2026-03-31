@@ -18,6 +18,9 @@ MailRider is a lightweight Docker container that provides SMTP and IMAP servers 
 - ✅ **Standard Protocols** - SMTP (port 2587) + IMAP (port 143)
 - ✅ **Data Persistence** - Maildir format with volume support
 - ✅ **Perfect for Testing** - Multi-workspace routing, email workflows, notifications
+- ✅ **Folder Management** - Move emails into folders; toast notification confirms each move
+- ✅ **Bulk Selection** - Selected-email counter displayed next to the 'Delete selected' button
+- ✅ **Dynamic 'Move to…' Menu** - Dropdown lists all folders, including newly created empty ones
 
 ## 🚀 Quick Start
 
@@ -76,6 +79,10 @@ All emails sent to **any address** will appear in the Web UI!
 - **[API Documentation](docs/API.md)** - HTTP, SMTP, and IMAP APIs
 - **[Full Documentation](docs/DOCUMENTATION.md)** - Architecture, troubleshooting, and more
 - **[GitHub Pages](https://petrfilip.github.io/mailrider)** - Interactive documentation and examples
+
+## 🔒 Security
+
+All user-supplied data rendered in the Web UI — including email metadata (sender, subject, recipients), folder names, and error messages — is HTML-escaped before being inserted into the DOM to prevent cross-site scripting. Server-side endpoints validate folder names against an allowlist of safe characters and sanitize values before they are written to HTTP response headers. The Content Security Policy is enforced per-request with a generated nonce, eliminating the need for `unsafe-inline` script execution.
 
 ## 🎯 Use Cases
 

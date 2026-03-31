@@ -132,7 +132,8 @@
                             <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="w-4 h-4 text-primary-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
                             <span class="text-sm text-gray-700 dark:text-gray-300">Select all</span>
                         </label>
-                        <div class="flex space-x-2">
+                        <div class="flex items-center space-x-2">
+                            <span id="selectedCount" class="text-xs text-gray-500 dark:text-gray-400"></span>
                             <button onclick="deleteSelected()" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
                                 Delete selected
                             </button>
@@ -178,14 +179,14 @@
                     </div>
 
                     <!-- Drag & Drop Area -->
+                    <input type="file" id="emlFileInput" accept=".eml,message/rfc822" multiple class="hidden" onchange="handleFileSelect(event)">
                     <div id="dropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-primary-500 dark:hover:border-primary-400 transition-colors cursor-pointer">
-                        <input type="file" id="emlFileInput" accept=".eml,message/rfc822" multiple class="hidden" onchange="handleFileSelect(event)">
                         <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
                         <p class="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Drag & drop EML files here</p>
                         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">or</p>
-                        <button onclick="document.getElementById('emlFileInput').click()" class="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors">
+                        <button onclick="event.stopPropagation(); document.getElementById('emlFileInput').click()" class="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors">
                             Browse Files
                         </button>
                         <p class="text-xs text-gray-400 dark:text-gray-500 mt-4">You can select multiple files (max 50MB each)</p>
@@ -280,6 +281,7 @@
         // State management
         let allEmails = [];
         let filteredEmails = [];
+        let availableFolders = [];
         let selectedEmail = null;
         let selectedEmailFilename = null;
         let currentTab = 'html';
@@ -291,6 +293,7 @@
         let hasMoreEmails = true;
         let isLoadingMore = false;
         let latestTimestamp = 0;
+        let globalLatestTimestamp = 0; // tracks the true latest across all emails, unaffected by search filters
         let totalEmails = 0;
         let filteredTotal = 0;
         let searchDebounceTimer = null;
@@ -316,7 +319,7 @@
         }
 
         function formatDate(timestamp) {
-            if (!timestamp) return 'Neznámý';
+            if (!timestamp) return 'Unknown';
             const date = new Date(timestamp * 1000);
             const now = new Date();
             const diff = now - date;
@@ -373,6 +376,7 @@
 
                 hasMoreEmails = data.hasMore;
                 latestTimestamp = data.latestTimestamp || 0;
+                if (latestTimestamp > globalLatestTimestamp) globalLatestTimestamp = latestTimestamp;
                 totalEmails = data.total;
                 filteredTotal = data.filteredTotal || data.total;
                 currentOffset = allEmails.length;
@@ -384,6 +388,10 @@
                 // Update folder filter dropdown (only on initial load without search)
                 if (reset && !document.getElementById('searchInput').value.trim()) {
                     updateFolderFilter();
+                    // Populate availableFolders for Move-to dropdown
+                    fetch('/api/folders').then(r => r.json()).then(data => {
+                        availableFolders = (data.folders || []).map(f => f.name);
+                    }).catch(() => {});
                 }
 
                 // Render the list (no client-side filtering needed - server handles it)
@@ -403,7 +411,7 @@
                 console.error('Failed to load emails:', error);
                 document.getElementById('emailList').innerHTML = `
                     <div class="p-4 text-center text-red-500">
-                        Error loading: ${error.message}
+                        Error loading: ${escapeHtml(error.message)}
                     </div>
                 `;
             } finally {
@@ -442,10 +450,10 @@
 
         // Load new emails (auto-refresh - prepend new ones)
         async function loadNewEmails() {
-            if (latestTimestamp === 0) return;
+            if (globalLatestTimestamp === 0) return;
 
             try {
-                const url = buildApiUrl({ since: latestTimestamp });
+                const url = buildApiUrl({ since: globalLatestTimestamp });
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -455,8 +463,9 @@
                 if (newEmails.length > 0) {
                     // Prepend new emails (they are newer)
                     allEmails = [...newEmails, ...allEmails];
-                    latestTimestamp = data.latestTimestamp || latestTimestamp;
                     currentOffset += newEmails.length;
+                    latestTimestamp = data.latestTimestamp || latestTimestamp;
+                    globalLatestTimestamp = data.latestTimestamp || globalLatestTimestamp;
 
                     // Update header stats
                     document.getElementById('headerTotalEmails').textContent = data.total;
@@ -513,7 +522,7 @@
             // Update dropdown options
             folderFilter.innerHTML = '<option value="">All folders</option>' +
                 sortedFolders.map(folder =>
-                    `<option value="${folder}">${folder}</option>`
+                    `<option value="${escapeHtml(folder)}">${escapeHtml(folder)}</option>`
                 ).join('');
 
             // Restore previous selection if it still exists
@@ -542,6 +551,10 @@
         function renderEmailList() {
             const emailList = document.getElementById('emailList');
 
+            const selectAllEl = document.getElementById('selectAll');
+            if (selectAllEl) { selectAllEl.checked = false; selectAllEl.indeterminate = false; }
+            updateSelectedCount();
+
             if (allEmails.length === 0) {
                 emailList.innerHTML = `
                     <div class="p-8 text-center">
@@ -556,29 +569,29 @@
 
             emailList.innerHTML = allEmails.map(email => `
                 <div
-                    onclick="selectEmail('${email.filename}')"
+                    onclick="selectEmail(${JSON.stringify(email.filename)})"
                     class="email-item border-b border-gray-200 dark:border-gray-700 p-4 hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer transition-colors ${selectedEmailFilename === email.filename ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-l-primary-500' : ''} ${!email.isRead ? 'bg-blue-50 dark:bg-blue-900/10' : ''}"
                 >
                     <div class="flex items-start justify-between mb-2">
                         <input
                             type="checkbox"
                             class="email-checkbox mt-1 w-4 h-4 text-primary-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500"
-                            data-filename="${email.filename}"
-                            onclick="event.stopPropagation()"
+                            data-filename="${escapeHtml(email.filename)}"
+                            onclick="event.stopPropagation(); updateSelectedCount()"
                         >
                         <div class="flex-1 ml-3">
                             <div class="flex items-center space-x-2">
                                 ${!email.isRead ? '<span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>' : ''}
                                 <div class="${!email.isRead ? 'font-bold' : 'font-semibold'} text-gray-900 dark:text-white text-sm">
-                                    ${email.subject || '(No subject)'}
+                                    ${escapeHtml(email.subject || '(No subject)')}
                                 </div>
                             </div>
                             <div class="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                ${truncate(email.from, 40)}
+                                ${escapeHtml(truncate(email.from || '', 40))}
                             </div>
                             <div class="flex items-center space-x-2 mt-1">
                                 <span class="text-xs text-gray-500 dark:text-gray-400">${formatDate(email.timestamp)}</span>
-                                ${email.folder && email.folder !== 'INBOX' ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">📁 ${email.folder}</span>` : ''}
+                                ${email.folder && email.folder !== 'INBOX' ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">📁 ${escapeHtml(email.folder)}</span>` : ''}
                                 ${email.attachmentCount > 0 ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200">📎 ${email.attachmentCount}</span>` : ''}
                             </div>
                         </div>
@@ -601,12 +614,13 @@
                     selectedEmail.isRead = true;
                 }
 
+                currentTab = getFirstAvailableTab();
                 renderEmailDetail();
             } catch (error) {
                 console.error('Failed to load email detail:', error);
                 document.getElementById('emailDetail').innerHTML = `
                     <div class="p-4 text-center text-red-500">
-                        Error loading details: ${error.message}
+                        Error loading details: ${escapeHtml(error.message)}
                     </div>
                 `;
             }
@@ -645,6 +659,21 @@
         }
 
         // Render email detail with tabs
+        function getFirstAvailableTab() {
+            if (!selectedEmail) return 'html';
+            const tabs = [
+                ['html', selectedEmail.htmlBody || selectedEmail.textBody],
+                ['text', selectedEmail.textBody],
+                ['headers', true],
+                ['raw', selectedEmail.rawContent],
+                ['attachments', selectedEmail.attachments && selectedEmail.attachments.length > 0],
+            ];
+            for (const [name, enabled] of tabs) {
+                if (enabled) return name;
+            }
+            return 'html';
+        }
+
         function renderEmailDetail() {
             const detailContainer = document.getElementById('emailDetail');
 
@@ -665,10 +694,10 @@
                     <!-- Email Header -->
                     <div class="border-b border-gray-200 dark:border-gray-700 p-4">
                         <div class="flex items-start justify-between mb-4">
-                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white flex-1">${selectedEmail.subject || '(No subject)'}</h2>
+                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white flex-1">${escapeHtml(selectedEmail.subject || '(No subject)')}</h2>
                             <div class="flex space-x-2 ml-4">
                                 ${selectedEmail.isRead ? `
-                                    <button onclick="markAsUnread('${selectedEmail.filename}')" class="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
+                                    <button onclick="markAsUnread(${JSON.stringify(selectedEmail.filename)})" class="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
                                         ✉️ Mark as unread
                                     </button>
                                 ` : ''}
@@ -677,26 +706,21 @@
                                 </a>
                                 <div class="relative inline-block">
                                     <select
-                                        onchange="if(this.value) { moveEmailToFolder('${selectedEmail.filename}', this.value); this.value = ''; }"
+                                        onchange="if(this.value) { moveEmailToFolder(${JSON.stringify(selectedEmail.filename)}, this.value); this.value = ''; }"
                                         class="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors cursor-pointer appearance-none pr-8"
                                     >
                                         <option value="">📁 Move to...</option>
-                                        ${(allEmails.reduce((folders, email) => {
-                                            if (email.folder && !folders.includes(email.folder) && email.folder !== selectedEmail.folder) {
-                                                folders.push(email.folder);
-                                            }
-                                            return folders;
-                                        }, []).sort((a, b) => {
+                                        ${availableFolders.filter(folder => folder !== selectedEmail.folder).sort((a, b) => {
                                             if (a === 'INBOX') return -1;
                                             if (b === 'INBOX') return 1;
                                             return a.localeCompare(b);
-                                        })).map(folder => `<option value="${folder}">${folder}</option>`).join('')}
+                                        }).map(folder => `<option value="${escapeHtml(folder)}">${escapeHtml(folder)}</option>`).join('')}
                                     </select>
                                     <svg class="w-4 h-4 text-white absolute right-2 top-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                     </svg>
                                 </div>
-                                <button onclick="deleteEmail('${selectedEmail.filename}')" class="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
+                                <button onclick="deleteEmail(${JSON.stringify(selectedEmail.filename)})" class="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
                                     🗑️ Delete
                                 </button>
                             </div>
@@ -704,16 +728,16 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex">
                                 <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">From:</span>
-                                <span class="text-gray-900 dark:text-white">${selectedEmail.from}</span>
+                                <span class="text-gray-900 dark:text-white">${escapeHtml(selectedEmail.from || '')}</span>
                             </div>
                             <div class="flex">
                                 <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">To:</span>
-                                <span class="text-gray-900 dark:text-white">${selectedEmail.to}</span>
+                                <span class="text-gray-900 dark:text-white">${escapeHtml(selectedEmail.to || '')}</span>
                             </div>
                             ${selectedEmail.cc ? `
                             <div class="flex">
                                 <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Cc:</span>
-                                <span class="text-gray-900 dark:text-white">${selectedEmail.cc}</span>
+                                <span class="text-gray-900 dark:text-white">${escapeHtml(selectedEmail.cc)}</span>
                             </div>
                             ` : ''}
                             <div class="flex">
@@ -723,7 +747,7 @@
                             ${selectedEmail.folder ? `
                             <div class="flex">
                                 <span class="font-semibold text-gray-600 dark:text-gray-400 w-16">Folder:</span>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${selectedEmail.folder === 'INBOX' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'}">📁 ${selectedEmail.folder}</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${selectedEmail.folder === 'INBOX' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'}">📁 ${escapeHtml(selectedEmail.folder)}</span>
                             </div>
                             ` : ''}
                         </div>
@@ -877,11 +901,18 @@
         }
 
         // Bulk actions
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.email-checkbox:checked').length;
+            const el = document.getElementById('selectedCount');
+            if (el) { el.textContent = count > 0 ? `${count} selected` : ''; }
+        }
+
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll').checked;
             document.querySelectorAll('.email-checkbox').forEach(cb => {
                 cb.checked = selectAll;
             });
+            updateSelectedCount();
         }
 
         async function deleteSelected() {
@@ -1206,6 +1237,8 @@
                 const response = await fetch('/api/folders');
                 const data = await response.json();
 
+                availableFolders = (data.folders || []).map(f => f.name);
+
                 const foldersList = document.getElementById('foldersList');
                 const folders = data.folders || [];
 
@@ -1225,12 +1258,12 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                             </svg>
                             <div>
-                                <div class="font-semibold text-gray-900 dark:text-white">${folder.name}</div>
+                                <div class="font-semibold text-gray-900 dark:text-white">${escapeHtml(folder.name)}</div>
                                 <div class="text-sm text-gray-500 dark:text-gray-400">${folder.count} email${folder.count !== 1 ? 's' : ''}</div>
                             </div>
                         </div>
                         ${folder.isDeletable ? `
-                            <button onclick="deleteFolder('${folder.name}')" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
+                            <button onclick="deleteFolder(${JSON.stringify(folder.name)})" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors">
                                 Delete
                             </button>
                         ` : `
@@ -1242,7 +1275,7 @@
                 console.error('Failed to load folders:', error);
                 document.getElementById('foldersList').innerHTML = `
                     <div class="p-4 text-center text-red-500">
-                        Error loading folders: ${error.message}
+                        Error loading folders: ${escapeHtml(error.message)}
                     </div>
                 `;
             }
@@ -1298,6 +1331,17 @@
             }
         }
 
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 18px;border-radius:6px;font-size:14px;color:#fff;background:#374151;box-shadow:0 2px 8px rgba(0,0,0,0.3);opacity:1;transition:opacity 0.4s ease';
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 400);
+            }, 2600);
+        }
+
         async function moveEmailToFolder(filename, targetFolder) {
             try {
                 const response = await fetch(`/api/emails/${filename}/move`, {
@@ -1312,6 +1356,8 @@
                 }
 
                 await loadEmails(); // Refresh email list
+
+                showToast(`Email moved to ${targetFolder}`);
 
                 // Close email detail if it was open
                 if (selectedEmailFilename === filename) {
@@ -1341,6 +1387,7 @@
 
         // Initialize
         loadEmails();
+        loadFolders();
         startAutoRefresh();
         setupInfiniteScroll();
     </script>
